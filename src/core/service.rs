@@ -43,7 +43,7 @@ where
         })))
     }
 
-    pub async fn send_service(&mut self, phone: &str) -> SendService<SD, ST, GN> {
+    pub async fn send_service(&self, phone: &str) -> SendService<SD, ST, GN> {
         let mut service = self.0.lock().await;
         if let Some(locker) = service.lockers.get(phone) {
             let locker = locker.clone();
@@ -68,7 +68,7 @@ where
         }
     }
 
-    pub async fn verify_service(&mut self, phone: &str) -> VerifyService<ST> {
+    pub async fn verify_service(&self, phone: &str) -> VerifyService<ST> {
         let mut service = self.0.lock().await;
         if let Some(locker) = service.lockers.get(phone) {
             let locker = locker.clone();
