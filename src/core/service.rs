@@ -68,13 +68,13 @@ where
         }
     }
 
-    pub async fn verify_service(&self, phone: &str) -> VerifyService<ST> {
+    pub async fn verify_service(&self, phone: &str, code: &str) -> VerifyService<ST> {
         let mut service = self.0.lock().await;
         if let Some(locker) = service.lockers.get(phone) {
             let locker = locker.clone();
             return VerifyService {
                 phone: phone.to_owned(),
-                code: "".to_owned(),
+                code: code.to_owned(),
                 expire_after: service.expire_after,
                 store: service.store.clone(),
                 locker,
