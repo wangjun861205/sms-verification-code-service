@@ -3,6 +3,7 @@ use std::fmt::Display;
 
 use super::locker::Locker;
 
+#[derive(Debug, Clone)]
 pub struct Service<SD, ST, GN, LK>
 where
     SD: Sender,
