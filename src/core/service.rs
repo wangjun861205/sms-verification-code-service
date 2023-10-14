@@ -20,6 +20,7 @@ where
     lockers: HashMap<String, Arc<Mutex<()>>>,
 }
 
+#[derive(Debug, Clone)]
 pub struct Service<SD, ST, GN>(Arc<Mutex<_Service<SD, ST, GN>>>)
 where
     SD: Sender + Clone,
