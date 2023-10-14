@@ -1,75 +1,158 @@
-use crate::core::{generator::Generator, sender::Sender, store::Store};
 use std::fmt::Display;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
-use super::locker::Locker;
+use crate::core::{generator::Generator, sender::Sender, store::Store};
+use std::collections::HashMap;
 
-#[derive(Debug, Clone)]
-pub struct Service<SD, ST, GN, LK>
+#[derive(Debug)]
+pub struct _Service<SD, ST, GN>
 where
-    SD: Sender,
-    ST: Store,
-    GN: Generator,
-    LK: Locker,
+    SD: Sender + Clone,
+    ST: Store + Clone,
+    GN: Generator + Clone,
 {
     min_interval: i64,
     expire_after: i64,
     sender: SD,
     store: ST,
     generator: GN,
-    locker: LK,
+    lockers: HashMap<String, Arc<Mutex<()>>>,
 }
 
-impl<SD, ST, GN, LK> Service<SD, ST, GN, LK>
+pub struct Service<SD, ST, GN>(Arc<Mutex<_Service<SD, ST, GN>>>)
 where
-    SD: Sender,
-    ST: Store,
-    GN: Generator,
-    LK: Locker,
+    SD: Sender + Clone,
+    ST: Store + Clone,
+    GN: Generator + Clone;
+
+impl<SD, ST, GN> Service<SD, ST, GN>
+where
+    SD: Sender + Clone,
+    ST: Store + Clone,
+    GN: Generator + Clone,
 {
-    pub fn new(
-        min_interval: i64,
-        expire_after: i64,
-        sender: SD,
-        store: ST,
-        generator: GN,
-        locker: LK,
-    ) -> Self {
-        Self {
+    pub fn new(min_interval: i64, expire_after: i64, sender: SD, store: ST, generator: GN) -> Self {
+        Self(Arc::new(Mutex::new(_Service {
             min_interval,
             expire_after,
             sender,
             store,
             generator,
+            lockers: HashMap::new(),
+        })))
+    }
+
+    pub async fn send_service(&mut self, phone: &str) -> SendService<SD, ST, GN> {
+        let mut service = self.0.lock().await;
+        if let Some(locker) = service.lockers.get(phone) {
+            let locker = locker.clone();
+            return SendService {
+                phone: phone.to_owned(),
+                min_interval: service.min_interval,
+                sender: service.sender.clone(),
+                store: service.store.clone(),
+                generator: service.generator.clone(),
+                locker,
+            };
+        }
+        let locker = Arc::new(Mutex::new(()));
+        service.lockers.insert(phone.to_owned(), locker.clone());
+        SendService {
+            phone: phone.to_owned(),
+            min_interval: service.min_interval,
+            sender: service.sender.clone(),
+            store: service.store.clone(),
+            generator: service.generator.clone(),
             locker,
         }
     }
 
-    pub async fn send_code(&mut self, phone: &str) -> Result<(), Box<dyn Display>> {
-        self.locker.lock(phone).await?;
-        if let Some(latest) = self.store.get(phone).await? {
+    pub async fn verify_service(&mut self, phone: &str) -> VerifyService<ST> {
+        let mut service = self.0.lock().await;
+        if let Some(locker) = service.lockers.get(phone) {
+            let locker = locker.clone();
+            return VerifyService {
+                phone: phone.to_owned(),
+                code: "".to_owned(),
+                expire_after: service.expire_after,
+                store: service.store.clone(),
+                locker,
+            };
+        }
+        let locker = Arc::new(Mutex::new(()));
+        service.lockers.insert(phone.to_owned(), locker.clone());
+        VerifyService {
+            phone: phone.to_owned(),
+            code: "".to_owned(),
+            expire_after: service.expire_after,
+            store: service.store.clone(),
+            locker,
+        }
+    }
+}
+
+pub struct SendService<SD, ST, GN>
+where
+    SD: Sender,
+    ST: Store,
+    GN: Generator,
+{
+    phone: String,
+    min_interval: i64,
+    sender: SD,
+    store: ST,
+    generator: GN,
+    locker: Arc<Mutex<()>>,
+}
+
+impl<SD, ST, GN> SendService<SD, ST, GN>
+where
+    SD: Sender,
+    ST: Store,
+    GN: Generator,
+{
+    pub async fn send_code(&mut self) -> Result<(), Box<dyn Display>> {
+        let _ = self.locker.lock().await;
+        if let Some(latest) = self.store.get(&self.phone).await? {
             if chrono::Utc::now().timestamp() - latest.sent_at < self.min_interval {
                 return Err(Box::new("Too frequent".to_owned()) as Box<dyn Display>);
             }
         }
         let code = self.generator.generate();
-        self.sender.send(phone, &code).await?;
-        self.store.put(phone, &code).await?;
-        self.locker.unlock(phone).await
+        self.sender.send(&self.phone, &code).await?;
+        self.store.put(&self.phone, &code).await?;
+        Ok(())
     }
+}
 
-    pub async fn check_code(&mut self, phone: &str, code: &str) -> Result<bool, Box<dyn Display>> {
-        self.locker.lock(phone);
+pub struct VerifyService<ST>
+where
+    ST: Store,
+{
+    phone: String,
+    code: String,
+    expire_after: i64,
+    store: ST,
+    locker: Arc<Mutex<()>>,
+}
+
+impl<ST> VerifyService<ST>
+where
+    ST: Store,
+{
+    pub async fn check_code(&mut self) -> Result<bool, Box<dyn Display>> {
+        let _ = self.locker.lock().await;
         let is_ok = self
             .store
-            .get(phone)
+            .get(&self.phone)
             .await?
             .map_or(Ok(false), |stored_code| {
                 Ok(
                     chrono::Utc::now().timestamp() <= stored_code.sent_at + self.expire_after
-                        && stored_code.code == code,
+                        && stored_code.code == self.code,
                 )
             })?;
-        self.locker.unlock(phone).await?;
         Ok(is_ok)
     }
 }
