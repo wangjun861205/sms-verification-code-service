@@ -11,6 +11,7 @@ where
     LK: Locker,
 {
     min_interval: i64,
+    expire_after: i64,
     sender: SD,
     store: ST,
     generator: GN,
@@ -24,9 +25,17 @@ where
     GN: Generator,
     LK: Locker,
 {
-    pub fn new(min_interval: i64, sender: SD, store: ST, generator: GN, locker: LK) -> Self {
+    pub fn new(
+        min_interval: i64,
+        expire_after: i64,
+        sender: SD,
+        store: ST,
+        generator: GN,
+        locker: LK,
+    ) -> Self {
         Self {
             min_interval,
+            expire_after,
             sender,
             store,
             generator,
@@ -53,7 +62,12 @@ where
             .store
             .get(phone)
             .await?
-            .map_or(Ok(false), |stored_code| Ok(stored_code.code == code))?;
+            .map_or(Ok(false), |stored_code| {
+                Ok(
+                    chrono::Utc::now().timestamp() <= stored_code.sent_at + self.expire_after
+                        && stored_code.code == code,
+                )
+            })?;
         self.locker.unlock(phone).await?;
         Ok(is_ok)
     }
