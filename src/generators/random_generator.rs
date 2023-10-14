@@ -1,7 +1,7 @@
 use crate::core::generator::Generator;
 use rand::Rng;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RandomGenerator;
 
 impl Generator for RandomGenerator {

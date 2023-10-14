@@ -5,7 +5,7 @@ use mongodb::{bson::doc, options::UpdateOptions, Collection};
 
 use crate::core::{entites::SMSVerificationCode, store::Store};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MongoStore {
     collection: Collection<SMSVerificationCode>,
 }

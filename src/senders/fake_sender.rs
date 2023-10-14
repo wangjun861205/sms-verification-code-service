@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::core::sender::Sender;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct FakeSender;
 
 impl Sender for FakeSender {
